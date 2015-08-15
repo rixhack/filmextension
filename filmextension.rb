@@ -5,10 +5,13 @@ require 'uri'
 #require 'typhoeus'
 require 'cgi'
 require 'net/http'
+require 'sqlite3'
 
 base_url = "http://www.filmaffinity.com/es/search.php?stext="
 base_film_url = "http://www.filmaffinity.com/es/film"
 fails = 0
+db = SQLite3::Database.open "PelisPendientes.db"
+db.execute "CREATE TABLE IF NOT EXISTS Films(Id INTEGER PRIMARY KEY, Number INTEGER, Title TEXT, Year INTEGER, RunningTime INTEGER, Country TEXT)" 
 
 def findId(res)
   loc = res['Location']
@@ -25,7 +28,7 @@ def findId(res)
 end
 
 
-def getFilmInfo(number, title, id, resf)
+def getFilmInfo(number, title, id, resf, db)
   n=1
   bodyf = resf.body.force_encoding('UTF-8')
   bf = bodyf.split('class="movie-info">')
@@ -35,20 +38,35 @@ def getFilmInfo(number, title, id, resf)
   movie_info = bf[1].split("</dd>")
   lyear = movie_info[n].split('"datePublished">')
   year = lyear[1]
-  puts year.nil?
   ltime = movie_info[n+1].split("<dd>")
   time = ltime[1]
-  puts time.nil?
   lcountry = movie_info[n+2].split("&nbsp;")
   country = lcountry[1]
-  puts country.nil?
   filminf = number + "."+title+" id: "+id+"| año: "+year+"| duración: "+time+"| país: "+country
+  insertDB(id, number, title, year, time, country, db)
   return filminf
+end
+
+
+def insertDB(id, number, title, year, time, country, db)
+  begin
+    stm = db.prepare "INSERT INTO Films VALUES(?, ?, ?, ?, ?, ?)"
+    stm.bind_param 1, id.to_i
+    stm.bind_param 2, number.to_i
+    stm.bind_param 3, title
+    stm.bind_param 4, year.to_i
+    stm.bind_param 5, time.to_i
+    stm.bind_param 6, country
+    stm.execute
+  rescue SQLite3::Exception => e
+    puts "Exception occured"
+    puts e
+  end
 end
 
 pelis = File.open('/home/rixhack/PelisPendientes','rb:UTF-8')
 #pelis = File.open('./PelisPendientesTest','r:UTF-8')
-pelisx = File.open('PelisPendientesX','wb');
+pelisx = File.open('PelisPendientesX','wb'); 
 while line = pelis.gets
   puts line
   l = line.split('.')
@@ -56,7 +74,6 @@ while line = pelis.gets
   title = l[1]
   titleESC= CGI.escape(title)
   uri=URI.parse(URI.encode(base_url+titleESC," "))
-  puts uri
   req = Net::HTTP::Get.new(uri.to_s)
   res = Net::HTTP.start(uri.host, uri.port) {|http| http.request(req)}
   body = res.body
@@ -69,19 +86,18 @@ while line = pelis.gets
   end
   if id!=0
     film_uri=URI.parse(base_film_url+id+".html")
-    puts film_uri
     reqf = Net::HTTP::Get.new(film_uri.to_s)
     resf = Net::HTTP.start(film_uri.host, 80, :open_timeout => 6)  {|http| 
                                                   http.request(reqf)}  
-    filminf = getFilmInfo(number, title, id, resf)
+    filminf = getFilmInfo(number, title, id, resf, db)
     pelisx.puts filminf
   else
     fails=fails+1
   end
-  #pelisx.close
 end
 puts "Fails: "+fails.to_s
 pelisx.close
+
   
   
   
