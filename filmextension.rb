@@ -11,19 +11,20 @@ base_url = "http://www.filmaffinity.com/es/search.php?stext="
 base_film_url = "http://www.filmaffinity.com/es/film"
 fails = 0
 db = SQLite3::Database.open "PelisPendientes.db"
-db.execute "CREATE TABLE IF NOT EXISTS Films(Id INTEGER PRIMARY KEY, Number INTEGER, Title TEXT, Year INTEGER, RunningTime INTEGER, Country TEXT)" 
+db.execute "DROP TABLE Films"
+db.execute "CREATE TABLE Films(Id INTEGER PRIMARY KEY, Number INTEGER, Title TEXT, Year INTEGER, RunningTime INTEGER, Country TEXT, Rating REAL)" 
 
 def findId(res)
   loc = res['Location']
   if loc.include? "es/film"
-    puts res['Location']
+    #puts res['Location']
     bid = res['Location'].split("m")
     pid = bid[1].split(".")
     id = pid[0]
   else
     id=0
   end
-  puts id
+  #puts id
   return id
 end
 
@@ -42,21 +43,29 @@ def getFilmInfo(number, title, id, resf, db)
   time = ltime[1]
   lcountry = movie_info[n+2].split("&nbsp;")
   country = lcountry[1]
-  filminf = number + "."+title+" id: "+id+"| año: "+year+"| duración: "+time+"| país: "+country
-  insertDB(id, number, title, year, time, country, db)
-  return filminf
+  lrating = bf[0].split('itemprop="ratingValue">')
+  if not lrating[1].nil?
+    lrating2 = lrating[1].split("</div>")
+    rating = lrating2[0]
+  else
+    rating = "0.0"
+  end
+  #filminf = number + "."+title+" id: "+id+"| año: "+year+"| duración: "+time+"| país: "+country+"| puntuación: "+rating
+  insertDB(id, number, title, year, time, country, rating, db)
+  #return filminf
 end
 
 
-def insertDB(id, number, title, year, time, country, db)
+def insertDB(id, number, title, year, time, country, rating, db)
   begin
-    stm = db.prepare "INSERT INTO Films VALUES(?, ?, ?, ?, ?, ?)"
+    stm = db.prepare "INSERT INTO Films VALUES(?, ?, ?, ?, ?, ?, ?)"
     stm.bind_param 1, id.to_i
     stm.bind_param 2, number.to_i
     stm.bind_param 3, title
     stm.bind_param 4, year.to_i
     stm.bind_param 5, time.to_i
     stm.bind_param 6, country
+    stm.bind_param 7, rating.gsub(",",".").to_f
     stm.execute
   rescue SQLite3::Exception => e
     puts "Exception occured"
@@ -65,8 +74,8 @@ def insertDB(id, number, title, year, time, country, db)
 end
 
 pelis = File.open('/home/rixhack/PelisPendientes','rb:UTF-8')
-#pelis = File.open('./PelisPendientesTest','r:UTF-8')
-pelisx = File.open('PelisPendientesX','wb'); 
+#pelis = File.open('./PelisPendientesTest','rb:UTF-8')
+#pelisx = File.open('PelisPendientesX','wb'); 
 while line = pelis.gets
   puts line
   l = line.split('.')
@@ -89,15 +98,11 @@ while line = pelis.gets
     reqf = Net::HTTP::Get.new(film_uri.to_s)
     resf = Net::HTTP.start(film_uri.host, 80, :open_timeout => 6)  {|http| 
                                                   http.request(reqf)}  
-    filminf = getFilmInfo(number, title, id, resf, db)
-    pelisx.puts filminf
+    getFilmInfo(number, title, id, resf, db)
+    #pelisx.puts filminf
   else
     fails=fails+1
   end
 end
 puts "Fails: "+fails.to_s
-pelisx.close
-
-  
-  
-  
+#pelisx.close
